@@ -39,16 +39,19 @@ alter table households enable row level security;
 alter table categories enable row level security;
 alter table transactions enable row level security;
 
-create policy if not exists "households public read"
+drop policy if exists "households public read" on households;
+create policy "households public read"
 on households for select
 using (true);
 
-create policy if not exists "categories public access"
+drop policy if exists "categories public access" on categories;
+create policy "categories public access"
 on categories for all
 using (true)
 with check (true);
 
-create policy if not exists "transactions public access"
+drop policy if exists "transactions public access" on transactions;
+create policy "transactions public access"
 on transactions for all
 using (true)
 with check (true);
@@ -69,3 +72,14 @@ for each row execute function set_updated_at();
 insert into households (id, name)
 values ('11111111-1111-1111-1111-111111111111', 'Casa Clara')
 on conflict (id) do nothing;
+
+insert into categories (id, household_id, name, color, icon, kind, is_default) values
+  ('22222222-2222-2222-2222-222222222201', '11111111-1111-1111-1111-111111111111', 'Moradia', '#355c7d', 'Home', 'expense', true),
+  ('22222222-2222-2222-2222-222222222202', '11111111-1111-1111-1111-111111111111', 'Supermercado', '#c06c84', 'ShoppingBasket', 'expense', true),
+  ('22222222-2222-2222-2222-222222222203', '11111111-1111-1111-1111-111111111111', 'Transporte', '#6c5b7b', 'Car', 'expense', true),
+  ('22222222-2222-2222-2222-222222222204', '11111111-1111-1111-1111-111111111111', 'Lazer', '#f67280', 'Ticket', 'expense', true),
+  ('22222222-2222-2222-2222-222222222205', '11111111-1111-1111-1111-111111111111', 'Saude', '#2a9d8f', 'HeartPulse', 'expense', true),
+  ('22222222-2222-2222-2222-222222222206', '11111111-1111-1111-1111-111111111111', 'Receitas', '#2f855a', 'Wallet', 'income', true),
+  ('22222222-2222-2222-2222-222222222207', '11111111-1111-1111-1111-111111111111', 'Contas da Casa', '#f4a261', 'ReceiptText', 'expense', true)
+on conflict (id) do nothing;
+
