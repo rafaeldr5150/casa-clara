@@ -1,0 +1,17 @@
+{
+  "name": "Casa Clara Financeiro",
+  "short_name": "Casa Clara",
+  "description": "Controle compartilhado de gastos familiares com visao mensal e historico.",
+  "theme_color": "#355c7d",
+  "background_color": "#fffaf5",
+  "display": "standalone",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/icon-app.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
