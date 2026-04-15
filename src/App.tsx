@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowDownCircle,
@@ -109,8 +109,8 @@ function buildMonthlySummary(
   };
 }
 
-function makeId(prefix: string) {
-  return `${prefix}-${crypto.randomUUID()}`;
+function makeId(_prefix: string) {
+  return crypto.randomUUID();
 }
 
 function buildPredictions(
@@ -216,7 +216,7 @@ function buildInsights(
     } else if (delta < -10) {
       insights.push({ text: `Gasto ${Math.round(Math.abs(delta))}% abaixo do mes anterior`, kind: 'positive' });
     } else {
-      insights.push({ text: `Gasto estavel â€” variacao de ${Math.round(Math.abs(delta))}% vs mes anterior`, kind: 'info' });
+      insights.push({ text: `Gasto estavel — variacao de ${Math.round(Math.abs(delta))}% vs mes anterior`, kind: 'info' });
     }
   }
 
@@ -256,7 +256,7 @@ function buildInsights(
 
   if (currentExpenses.length > 0) {
     const biggest = currentExpenses.reduce((max, t) => (t.amount > max.amount ? t : max));
-    insights.push({ text: `Maior gasto: "${biggest.description}" â€” ${formatCurrency(biggest.amount)}`, kind: 'info' });
+    insights.push({ text: `Maior gasto: "${biggest.description}" — ${formatCurrency(biggest.amount)}`, kind: 'info' });
   }
 
   if (currentIncome > 0 && currentTotal > 0) {
