@@ -328,6 +328,66 @@ interface AdvisorSnapshot {
   transactionsCount: number;
 }
 
+const femaleNameHints = new Set([
+  'ana',
+  'beatriz',
+  'bia',
+  'camila',
+  'carla',
+  'fernanda',
+  'gabriela',
+  'jessica',
+  'juliana',
+  'karina',
+  'larissa',
+  'mariana',
+  'patricia',
+  'rafaela',
+  'renata',
+  'sabrina',
+  'taina',
+  'vanessa',
+]);
+
+const maleNameHints = new Set([
+  'alex',
+  'andre',
+  'bruno',
+  'caio',
+  'carlos',
+  'daniel',
+  'felipe',
+  'gabriel',
+  'joao',
+  'jorge',
+  'leonardo',
+  'lucas',
+  'marcos',
+  'mateus',
+  'paulo',
+  'pedro',
+  'rafael',
+  'thiago',
+  'vinicius',
+]);
+
+function inferAdvisorAddress(name: string): 'cavalheiro' | 'gatinha' {
+  const normalized = name
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  const firstName = normalized.split(/\s+/)[0] ?? '';
+
+  if (femaleNameHints.has(firstName)) return 'gatinha';
+  if (maleNameHints.has(firstName)) return 'cavalheiro';
+
+  if (firstName.endsWith('a')) return 'gatinha';
+  if (firstName.endsWith('o')) return 'cavalheiro';
+
+  return 'cavalheiro';
+}
+
 function buildFinancialAdvisorRecommendations(
   transactions: Transaction[],
   categories: Category[],
@@ -463,17 +523,18 @@ function buildAdvisorReply(
   question: string,
   snapshot: AdvisorSnapshot,
   recommendations: AdvisorRecommendation[],
+  addressTerm: 'cavalheiro' | 'gatinha',
 ): string {
   const q = question.trim().toLowerCase();
   const topAction = recommendations[0]?.action ?? 'mantenha revisao semanal e acompanhe as categorias lideres.';
   const worriedTone = /(desesper|preocup|apert|devend|sem dinheiro|ferrad|caos|atras|problema)/.test(q);
   const intro = worriedTone
-    ? 'Calma, cavalheiro. Vamos dizer assim: isso se resolve no passo a passo.'
+    ? `Calma, ${addressTerm}. Vamos dizer assim: isso se resolve no passo a passo.`
     : 'Vamos dizer assim...';
   const confidentClosers = [
-    'Segue nesse ritmo que a casa entra no eixo, cavalheiro.',
+    `Segue nesse ritmo que a casa entra no eixo, ${addressTerm}.`,
     'Voce ta mandando bem por olhar os numeros com calma. Que se lixe a correria, aqui e estrategia.',
-    'Mantendo esse foco, o financeiro responde rapido, gatinha.',
+    `Mantendo esse foco, o financeiro responde rapido, ${addressTerm}.`,
   ];
   const closer = worriedTone
     ? 'Foca no proximo passo pratico que o jogo vira.'
@@ -501,7 +562,7 @@ function buildAdvisorReply(
   }
 
   if (q.includes('divida') || q.includes('cartao') || q.includes('parcel')) {
-    return `${intro} divida se resolve por ordem e sangue frio, cavalheiro.\n\nMinha estrategia: atacar juros mais altos primeiro, congelar novas parcelas por 30 dias e separar um valor fixo semanal pra amortizacao. Se voce me disser o valor da divida, eu te desenho um plano redondo. ${closer}`;
+    return `${intro} divida se resolve por ordem e sangue frio, ${addressTerm}.\n\nMinha estrategia: atacar juros mais altos primeiro, congelar novas parcelas por 30 dias e separar um valor fixo semanal pra amortizacao. Se voce me disser o valor da divida, eu te desenho um plano redondo. ${closer}`;
   }
 
   return `${intro} analisei seus dados e meu conselho principal agora e: ${topAction}\n\nSe quiser, manda uma dessas: "meta de economia", "resumo do mes" ou "como cortar gastos da categoria ${snapshot.topCategoryName}". ${closer}`;
@@ -803,6 +864,7 @@ export default function App() {
     () => buildAdvisorSnapshot(transactions, categories, selectedMonth),
     [transactions, categories, selectedMonth],
   );
+  const advisorAddressTerm = useMemo(() => inferAdvisorAddress(currentUserName), [currentUserName]);
   const isAdvisorBusy = advisorThinking || streamingAssistantMessageId !== null;
 
   useEffect(() => {
@@ -1013,7 +1075,7 @@ export default function App() {
       }));
 
     if (!isSupabaseEnabled || !supabase) {
-      return buildAdvisorReply(question, advisorSnapshot, recommendations);
+      return buildAdvisorReply(question, advisorSnapshot, recommendations, advisorAddressTerm);
     }
 
     try {
@@ -1021,6 +1083,7 @@ export default function App() {
         householdName: activeHousehold?.name ?? 'Grupo financeiro',
         selectedMonth,
         focus: advisorFocus,
+        preferredAddress: advisorAddressTerm,
         snapshot: advisorSnapshot,
         recommendations,
         recentTransactions,
@@ -1032,7 +1095,7 @@ export default function App() {
       return result.reply;
     } catch (error) {
       console.error('[requestAdvisorReply]', error);
-      return buildAdvisorReply(question, advisorSnapshot, recommendations);
+      return buildAdvisorReply(question, advisorSnapshot, recommendations, advisorAddressTerm);
     }
   }
 
@@ -1663,7 +1726,7 @@ export default function App() {
               ))}
               {advisorThinking && (
                 <article className="advisor-message assistant">
-                  <p>Um instante, cavalheiro... estou cruzando os dados e montando a resposta.</p>
+                  <p>Um instante, {advisorAddressTerm}... estou cruzando os dados e montando a resposta.</p>
                 </article>
               )}
             </div>

@@ -55,6 +55,7 @@ export async function invokeFinancialAdvisor(payload: {
   householdName: string;
   selectedMonth: string;
   focus: string;
+  preferredAddress: 'cavalheiro' | 'gatinha';
   snapshot: {
     totalIncome: number;
     totalExpenses: number;
