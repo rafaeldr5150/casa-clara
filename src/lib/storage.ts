@@ -101,6 +101,41 @@ async function getOrCreateUserHouseholds(userId: string, userName: string): Prom
     .filter((item): item is HouseholdSummaryItem => Boolean(item));
 }
 
+async function pickBestHouseholdId(
+  households: HouseholdSummaryItem[],
+  activeHouseholdId?: string,
+): Promise<string> {
+  if (!households.length || !supabase) {
+    return '';
+  }
+
+  if (activeHouseholdId && households.some((item) => item.id === activeHouseholdId)) {
+    return activeHouseholdId;
+  }
+
+  const householdIds = households.map((item) => item.id);
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('household_id')
+    .in('household_id', householdIds);
+
+  if (error) {
+    return households[0].id;
+  }
+
+  const countByHouseholdId = (data ?? []).reduce<Record<string, number>>((accumulator, item) => {
+    const householdId = item.household_id as string;
+    accumulator[householdId] = (accumulator[householdId] ?? 0) + 1;
+    return accumulator;
+  }, {});
+
+  const ranked = [...households].sort(
+    (left, right) => (countByHouseholdId[right.id] ?? 0) - (countByHouseholdId[left.id] ?? 0),
+  );
+
+  return ranked[0].id;
+}
+
 function mapCategoryFromRemote(category: {
   id: string;
   household_id: string;
@@ -189,9 +224,7 @@ export async function loadState(activeHouseholdId?: string): Promise<AppState> {
     throw new Error('Usuario sem grupo associado.');
   }
 
-  const householdId = households.some((item) => item.id === activeHouseholdId)
-    ? (activeHouseholdId as string)
-    : households[0].id;
+  const householdId = await pickBestHouseholdId(households, activeHouseholdId);
 
   const [categoriesResult, transactionsResult] = await Promise.all([
     supabase.from('categories').select('*').eq('household_id', householdId).order('name'),

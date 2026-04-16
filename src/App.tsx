@@ -662,7 +662,7 @@ export default function App() {
       setCurrentUserName(resolvedName);
       setCurrentUserId(user.id);
       const savedHousehold = localStorage.getItem(`casa-clara-active-household-${user.id}`) ?? '';
-      setCurrentHouseholdId(savedHousehold || user.id);
+      setCurrentHouseholdId(savedHousehold);
     };
 
     void getCurrentUser().then((user) => {
