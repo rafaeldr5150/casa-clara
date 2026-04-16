@@ -1143,13 +1143,16 @@ select:focus {
     min-height: 40px;
     padding: 8px 12px;
     font-weight: 700;
-    margin-bottom: 12px;
-    position: relative;
-    z-index: 2;
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 10px);
+    left: 14px;
+    z-index: 60;
+    backdrop-filter: blur(10px);
   }
 
   .hero {
     flex-direction: column;
+    padding-top: 56px;
   }
 
   .hero-actions {
