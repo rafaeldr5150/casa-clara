@@ -66,13 +66,22 @@ alter table transactions enable row level security;
 alter table household_members enable row level security;
 alter table household_invites enable row level security;
 
-drop policy if exists "households public read" on households;
-drop policy if exists "categories public access" on categories;
-drop policy if exists "transactions public access" on transactions;
+-- Drop ALL existing policies (regardless of name) to avoid leftover recursive ones
+do $$
+declare r record;
+begin
+  for r in
+    select schemaname, tablename, policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename in ('households','household_members','categories','transactions','household_invites')
+  loop
+    execute format('drop policy if exists %I on %I.%I', r.policyname, r.schemaname, r.tablename);
+  end loop;
+end $$;
 
-drop policy if exists "households own access" on households;
-create policy "households own access"
-on households for all
+create policy "households select"
+on households for select
 using (
   owner_id = auth.uid()
   or exists (
@@ -81,12 +90,45 @@ using (
     where hm.household_id = households.id
       and hm.user_id = auth.uid()
   )
-)
-with check (owner_id = auth.uid() or id = auth.uid());
+);
 
-drop policy if exists "categories own household" on categories;
-create policy "categories own household"
-on categories for all
+create policy "households insert"
+on households for insert
+with check (owner_id = auth.uid());
+
+create policy "households update"
+on households for update
+using (owner_id = auth.uid())
+with check (owner_id = auth.uid());
+
+create policy "households delete"
+on households for delete
+using (owner_id = auth.uid());
+
+create policy "categories select"
+on categories for select
+using (
+  exists (
+    select 1
+    from household_members hm
+    where hm.household_id = categories.household_id
+      and hm.user_id = auth.uid()
+  )
+);
+
+create policy "categories insert"
+on categories for insert
+with check (
+  exists (
+    select 1
+    from household_members hm
+    where hm.household_id = categories.household_id
+      and hm.user_id = auth.uid()
+  )
+);
+
+create policy "categories update"
+on categories for update
 using (
   exists (
     select 1
@@ -104,9 +146,41 @@ with check (
   )
 );
 
-drop policy if exists "transactions own household" on transactions;
-create policy "transactions own household"
-on transactions for all
+create policy "categories delete"
+on categories for delete
+using (
+  exists (
+    select 1
+    from household_members hm
+    where hm.household_id = categories.household_id
+      and hm.user_id = auth.uid()
+  )
+);
+
+create policy "transactions select"
+on transactions for select
+using (
+  exists (
+    select 1
+    from household_members hm
+    where hm.household_id = transactions.household_id
+      and hm.user_id = auth.uid()
+  )
+);
+
+create policy "transactions insert"
+on transactions for insert
+with check (
+  exists (
+    select 1
+    from household_members hm
+    where hm.household_id = transactions.household_id
+      and hm.user_id = auth.uid()
+  )
+);
+
+create policy "transactions update"
+on transactions for update
 using (
   exists (
     select 1
@@ -124,11 +198,33 @@ with check (
   )
 );
 
-drop policy if exists "household members access" on household_members;
-create policy "household members access"
-on household_members for all
-using (user_id = auth.uid() or household_id = auth.uid())
-with check (user_id = auth.uid() or household_id = auth.uid());
+create policy "transactions delete"
+on transactions for delete
+using (
+  exists (
+    select 1
+    from household_members hm
+    where hm.household_id = transactions.household_id
+      and hm.user_id = auth.uid()
+  )
+);
+
+create policy "household members select"
+on household_members for select
+using (user_id = auth.uid());
+
+create policy "household members insert"
+on household_members for insert
+with check (user_id = auth.uid());
+
+create policy "household members update"
+on household_members for update
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
+
+create policy "household members delete"
+on household_members for delete
+using (user_id = auth.uid() and role = 'member');
 
 drop policy if exists "household invites select" on household_invites;
 create policy "household invites select"

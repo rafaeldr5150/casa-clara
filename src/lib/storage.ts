@@ -9,12 +9,7 @@ async function ensureRemoteBaseline(userId: string, userName: string) {
 
   const householdId = userId;
 
-  const { count } = await supabase
-    .from('categories')
-    .select('id', { count: 'exact', head: true })
-    .eq('household_id', householdId);
-
-  await supabase
+  const { error: householdError } = await supabase
     .from('households')
     .upsert({
       id: householdId,
@@ -23,18 +18,35 @@ async function ensureRemoteBaseline(userId: string, userName: string) {
       currency: 'BRL',
     });
 
-  await supabase.from('household_members').upsert({
+  if (householdError) {
+    throw new Error(`Falha ao criar grupo inicial: ${householdError.message}`);
+  }
+
+  const { error: memberError } = await supabase.from('household_members').upsert({
     household_id: householdId,
     user_id: userId,
     display_name: userName,
     role: 'owner',
   });
 
+  if (memberError) {
+    throw new Error(`Falha ao criar membro inicial: ${memberError.message}`);
+  }
+
+  const { count, error: countError } = await supabase
+    .from('categories')
+    .select('id', { count: 'exact', head: true })
+    .eq('household_id', householdId);
+
+  if (countError) {
+    throw new Error(`Falha ao verificar categorias iniciais: ${countError.message}`);
+  }
+
   if ((count ?? 0) > 0) {
     return;
   }
 
-  await supabase.from('categories').insert(
+  const { error: seedError } = await supabase.from('categories').insert(
     seedState.categories.map((category) => ({
       id: crypto.randomUUID(),
       household_id: householdId,
@@ -45,6 +57,10 @@ async function ensureRemoteBaseline(userId: string, userName: string) {
       is_default: true,
     })),
   );
+
+  if (seedError) {
+    throw new Error(`Falha ao criar categorias iniciais: ${seedError.message}`);
+  }
 }
 
 function normalizeInviteCode(code: string) {
@@ -69,7 +85,7 @@ async function getOrCreateUserHouseholds(userId: string, userName: string): Prom
     .order('created_at', { ascending: true });
 
   if (error) {
-    throw new Error('Nao foi possivel carregar os grupos do usuario.');
+    throw new Error(`Nao foi possivel carregar os grupos do usuario: ${error.message}`);
   }
 
   return (data ?? [])
@@ -183,7 +199,8 @@ export async function loadState(activeHouseholdId?: string): Promise<AppState> {
   ]);
 
   if (categoriesResult.error || transactionsResult.error) {
-    throw new Error('Nao foi possivel carregar dados do usuario no Supabase.');
+    const details = [categoriesResult.error?.message, transactionsResult.error?.message].filter(Boolean).join(' | ');
+    throw new Error(`Nao foi possivel carregar dados do usuario no Supabase: ${details}`);
   }
 
   return {

@@ -623,11 +623,18 @@ export default function App() {
         setHouseholds(userHouseholds);
         setAppState(state);
         setLoadError(null);
-        const householdMembers = await listHouseholdMembers(state.householdId);
-        if (!mounted) {
-          return;
+        try {
+          const householdMembers = await listHouseholdMembers(state.householdId);
+          if (!mounted) {
+            return;
+          }
+          setMembers(householdMembers);
+        } catch (error) {
+          console.error('[listHouseholdMembers]', error);
+          if (mounted) {
+            setMembers([]);
+          }
         }
-        setMembers(householdMembers);
         if (state.householdId !== currentHouseholdId) {
           setCurrentHouseholdId(state.householdId);
           if (activeHouseholdStorageKey) {
@@ -641,7 +648,7 @@ export default function App() {
         }));
       } catch (error) {
         console.error('[initialize]', error);
-        setLoadError('Nao foi possivel carregar seus dados. Verifique as politicas do Supabase e tente novamente.');
+        setLoadError(error instanceof Error ? error.message : 'Nao foi possivel carregar seus dados.');
       }
     };
 
