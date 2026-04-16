@@ -467,18 +467,20 @@ function buildAdvisorReply(
   const q = question.trim().toLowerCase();
   const topAction = recommendations[0]?.action ?? 'mantenha revisao semanal e acompanhe as categorias lideres.';
   const worriedTone = /(desesper|preocup|apert|devend|sem dinheiro|ferrad|caos|atras|problema)/.test(q);
-  const intro = worriedTone ? 'Respira, meu. Bora arrumar isso no passo a passo.' : 'Mano, papo reto...';
+  const intro = worriedTone
+    ? 'Calma, cavalheiro. Vamos dizer assim: isso se resolve no passo a passo.'
+    : 'Vamos dizer assim...';
   const confidentClosers = [
-    'Segue nesse ritmo que a casa entra no eixo, meu.',
-    'Voce ta mandando bem por olhar os numeros com calma, bora pra proxima.',
-    'Fechou, mano. Mantendo esse foco, o financeiro responde rapido.',
+    'Segue nesse ritmo que a casa entra no eixo, cavalheiro.',
+    'Voce ta mandando bem por olhar os numeros com calma. Que se lixe a correria, aqui e estrategia.',
+    'Mantendo esse foco, o financeiro responde rapido, gatinha.',
   ];
   const closer = worriedTone
     ? 'Foca no proximo passo pratico que o jogo vira.'
     : confidentClosers[Math.floor(Math.random() * confidentClosers.length)];
 
   if (!q) {
-    return 'Meu, eu sou o Rodrigao do planejamento domestico. Te ajudo com metas, economia, fluxo do mes e corte de gasto sem enrolacao.';
+    return 'Eu sou o Rodrigao do planejamento domestico. Vamos dizer assim: te ajudo com metas, economia, fluxo do mes e corte de gasto sem enrolacao.';
   }
 
   if (q.includes('resumo') || q.includes('situacao') || q.includes('como estamos')) {
@@ -499,7 +501,7 @@ function buildAdvisorReply(
   }
 
   if (q.includes('divida') || q.includes('cartao') || q.includes('parcel')) {
-    return `${intro} divida se resolve por ordem e sangue frio, mano.\n\nMinha estrategia: atacar juros mais altos primeiro, congelar novas parcelas por 30 dias e separar um valor fixo semanal pra amortizacao. Se voce me disser o valor da divida, eu te desenho um plano redondo, sem caozada. ${closer}`;
+    return `${intro} divida se resolve por ordem e sangue frio, cavalheiro.\n\nMinha estrategia: atacar juros mais altos primeiro, congelar novas parcelas por 30 dias e separar um valor fixo semanal pra amortizacao. Se voce me disser o valor da divida, eu te desenho um plano redondo. ${closer}`;
   }
 
   return `${intro} analisei seus dados e meu conselho principal agora e: ${topAction}\n\nSe quiser, manda uma dessas: "meta de economia", "resumo do mes" ou "como cortar gastos da categoria ${snapshot.topCategoryName}". ${closer}`;
@@ -549,7 +551,7 @@ export default function App() {
     {
       id: crypto.randomUUID(),
       role: 'assistant',
-      text: 'Meu, eu sou o Rodrigao. Se o assunto e organizar a grana da casa, aqui e no capricho. Manda pergunta de economia, meta, categoria, divida ou fluxo do mes que eu desenrolo.',
+      text: 'Eu sou o Rodrigao. Vamos dizer assim: se o assunto e organizar a grana da casa, aqui e no capricho. Mande sua pergunta sobre economia, metas, categorias, divida ou fluxo do mes.',
     },
   ]);
   const [streamingAssistantMessageId, setStreamingAssistantMessageId] = useState<string | null>(null);
@@ -1661,7 +1663,7 @@ export default function App() {
               ))}
               {advisorThinking && (
                 <article className="advisor-message assistant">
-                  <p>Pera ai, mano... to cruzando os dados e montando a resposta.</p>
+                  <p>Um instante, cavalheiro... estou cruzando os dados e montando a resposta.</p>
                 </article>
               )}
             </div>
