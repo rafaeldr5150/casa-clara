@@ -690,7 +690,7 @@ export default function App() {
       return;
     }
 
-    if (isSupabaseEnabled && !currentHouseholdId) {
+    if (isSupabaseEnabled && !currentUserId) {
       return;
     }
 
@@ -747,7 +747,7 @@ export default function App() {
       mounted = false;
       unsubscribe();
     };
-  }, [activeHouseholdStorageKey, authReady, currentHouseholdId, currentUserName]);
+  }, [activeHouseholdStorageKey, authReady, currentHouseholdId, currentUserId, currentUserName]);
   const categories = appState?.categories ?? [];
   const transactions = appState?.transactions ?? [];
   const activeHousehold = households.find((item) => item.id === currentHouseholdId) ?? null;
