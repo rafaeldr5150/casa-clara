@@ -328,6 +328,11 @@ interface AdvisorSnapshot {
   transactionsCount: number;
 }
 
+type DeferredInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
+
 const femaleNameHints = new Set([
   'ana',
   'beatriz',
@@ -618,6 +623,15 @@ export default function App() {
   const [streamingAssistantMessageId, setStreamingAssistantMessageId] = useState<string | null>(null);
   const advisorMessagesContainerRef = useRef<HTMLDivElement | null>(null);
   const typingTimerRef = useRef<number | null>(null);
+  const [installPromptEvent, setInstallPromptEvent] = useState<DeferredInstallPromptEvent | null>(null);
+  const [installPlatform, setInstallPlatform] = useState<'android' | 'ios' | 'other'>('other');
+  const [installAvailable, setInstallAvailable] = useState(false);
+  const [installingApp, setInstallingApp] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [installBannerDismissed, setInstallBannerDismissed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('casa-clara-install-banner-dismissed') === '1';
+  });
 
   const activeHouseholdStorageKey = currentUserId ? `casa-clara-active-household-${currentUserId}` : '';
 
@@ -866,6 +880,57 @@ export default function App() {
   );
   const advisorAddressTerm = useMemo(() => inferAdvisorAddress(currentUserName), [currentUserName]);
   const isAdvisorBusy = advisorThinking || streamingAssistantMessageId !== null;
+  const showInstallBanner = installAvailable && !isInstalled && !installBannerDismissed;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const getStandaloneState = () => {
+      const standaloneByDisplayMode = window.matchMedia('(display-mode: standalone)').matches;
+      const standaloneByNavigator = Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
+      return standaloneByDisplayMode || standaloneByNavigator;
+    };
+
+    const syncInstallState = () => {
+      const standalone = getStandaloneState();
+      setIsInstalled(standalone);
+      if (!standalone) {
+        const userAgent = window.navigator.userAgent.toLowerCase();
+        const isIos = /iphone|ipad|ipod/.test(userAgent);
+        if (isIos) {
+          setInstallPlatform('ios');
+          setInstallAvailable(true);
+        }
+      }
+    };
+
+    const onBeforeInstallPrompt = (event: Event) => {
+      const promptEvent = event as DeferredInstallPromptEvent;
+      event.preventDefault();
+      setInstallPromptEvent(promptEvent);
+      setInstallPlatform('android');
+      setInstallAvailable(true);
+    };
+
+    const onAppInstalled = () => {
+      setIsInstalled(true);
+      setInstallAvailable(false);
+      setInstallPromptEvent(null);
+      localStorage.setItem('casa-clara-install-banner-dismissed', '1');
+      setInstallBannerDismissed(true);
+    };
+
+    syncInstallState();
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    window.addEventListener('appinstalled', onAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', onAppInstalled);
+    };
+  }, []);
 
   useEffect(() => {
     const container = advisorMessagesContainerRef.current;
@@ -1127,6 +1192,30 @@ export default function App() {
     setAdvisorQuestion(prompt);
   }
 
+  async function handleInstallApp() {
+    if (!installPromptEvent || installPlatform !== 'android') {
+      return;
+    }
+
+    setInstallingApp(true);
+    try {
+      await installPromptEvent.prompt();
+      const { outcome } = await installPromptEvent.userChoice;
+      if (outcome === 'accepted') {
+        localStorage.setItem('casa-clara-install-banner-dismissed', '1');
+        setInstallBannerDismissed(true);
+      }
+    } finally {
+      setInstallingApp(false);
+      setInstallPromptEvent(null);
+    }
+  }
+
+  function handleDismissInstallBanner() {
+    localStorage.setItem('casa-clara-install-banner-dismissed', '1');
+    setInstallBannerDismissed(true);
+  }
+
   async function handleTransactionSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
@@ -1362,6 +1451,34 @@ export default function App() {
             {syncStatus === 'online' ? <Wifi size={16} /> : <WifiOff size={16} />}
             <span>{syncStatus === 'online' ? 'Finanças Conectadas' : 'Modo local ativo'}</span>
           </div>
+
+          {showInstallBanner && (
+            <section className="install-card" aria-live="polite">
+              <div className="install-card-head">
+                <strong>Instale o app no celular</strong>
+                <button type="button" className="install-dismiss" onClick={handleDismissInstallBanner} aria-label="Fechar aviso">
+                  <X size={14} />
+                </button>
+              </div>
+              {installPlatform === 'android' ? (
+                <>
+                  <p>Adicione a Casa Clara na tela inicial para abrir como app, com visual nativo.</p>
+                  <button
+                    type="button"
+                    className="primary-button install-cta"
+                    onClick={() => void handleInstallApp()}
+                    disabled={installingApp}
+                  >
+                    {installingApp ? 'Abrindo instalacao...' : 'Instalar app'}
+                  </button>
+                </>
+              ) : (
+                <p>
+                  No iPhone/iPad: abra no Safari, toque em Compartilhar e escolha Adicionar a Tela de Inicio.
+                </p>
+              )}
+            </section>
+          )}
 
           {isSupabaseEnabled && (
             <button type="button" className="secondary-button logout-button" onClick={() => void handleSignOut()}>
