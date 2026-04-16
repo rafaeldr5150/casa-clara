@@ -17,6 +17,7 @@ import {
   SendHorizontal,
   ShoppingBasket,
   Ticket,
+  Menu,
   TrendingDown,
   TrendingUp,
   Trash2,
@@ -328,6 +329,8 @@ interface AdvisorSnapshot {
   transactionsCount: number;
 }
 
+type MobileView = 'dashboard' | 'lancamentos' | 'analises' | 'planejamento' | 'grupo';
+
 type DeferredInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
@@ -628,6 +631,8 @@ export default function App() {
   const [installAvailable, setInstallAvailable] = useState(false);
   const [installingApp, setInstallingApp] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [mobileView, setMobileView] = useState<MobileView>('dashboard');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [installBannerDismissed, setInstallBannerDismissed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return localStorage.getItem('casa-clara-install-banner-dismissed') === '1';
@@ -1216,6 +1221,14 @@ export default function App() {
     setInstallBannerDismissed(true);
   }
 
+  const mobileMenuItems: Array<{ id: MobileView; label: string; description: string }> = [
+    { id: 'dashboard', label: 'Dashboard geral', description: 'Resumo, previsoes e insights' },
+    { id: 'lancamentos', label: 'Lancamentos', description: 'Novo movimento, historico e categorias' },
+    { id: 'analises', label: 'Analises', description: 'Graficos de categorias, evolucao e quem pagou' },
+    { id: 'planejamento', label: 'Planejador IA', description: 'Recomendacoes e chat inteligente' },
+    { id: 'grupo', label: 'Grupo e convites', description: 'Membros, codigo e compartilhamento' },
+  ];
+
   async function handleTransactionSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
@@ -1436,6 +1449,48 @@ export default function App() {
       <div className="ambient ambient-left" />
       <div className="ambient ambient-right" />
 
+      <button
+        type="button"
+        className="mobile-menu-trigger"
+        onClick={() => setMobileMenuOpen(true)}
+        aria-label="Abrir menu de secoes"
+      >
+        <Menu size={18} />
+        <span>Menu</span>
+      </button>
+
+      {mobileMenuOpen && (
+        <div className="mobile-drawer-overlay" onClick={() => setMobileMenuOpen(false)}>
+          <aside className="mobile-drawer" onClick={(event) => event.stopPropagation()}>
+            <div className="mobile-drawer-header">
+              <div>
+                <small>Navegacao</small>
+                <strong>Casa Clara</strong>
+              </div>
+              <button type="button" className="mobile-drawer-close" onClick={() => setMobileMenuOpen(false)} aria-label="Fechar menu">
+                <X size={16} />
+              </button>
+            </div>
+            <nav className="mobile-drawer-nav" aria-label="Secoes do app">
+              {mobileMenuItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`mobile-nav-item ${mobileView === item.id ? 'active' : ''}`}
+                  onClick={() => {
+                    setMobileView(item.id);
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  <strong>{item.label}</strong>
+                  <small>{item.description}</small>
+                </button>
+              ))}
+            </nav>
+          </aside>
+        </div>
+      )}
+
       <header className="hero">
         <div>
           <span className="eyebrow">Financeiro colaborativo com convite</span>
@@ -1520,8 +1575,8 @@ export default function App() {
         </div>
       </header>
 
-      <main className="dashboard-grid">
-        <section className="panel panel-highlight">
+      <main className={`dashboard-grid mobile-view-${mobileView}`}>
+        <section className="panel panel-highlight mobile-view-panel mobile-view-dashboard">
           <div className="section-heading">
             <div>
               <span className="section-label">Resumo mensal</span>
@@ -1575,7 +1630,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="panel form-panel">
+        <section className="panel form-panel mobile-view-panel mobile-view-lancamentos">
           <div className="section-heading">
             <div>
               <span className="section-label">Lancamento rapido</span>
@@ -1687,7 +1742,7 @@ export default function App() {
           </form>
         </section>
 
-        <section className="panel share-panel">
+        <section className="panel share-panel mobile-view-panel mobile-view-grupo">
           <div className="section-heading">
             <div>
               <span className="section-label">Compartilhamento</span>
@@ -1774,7 +1829,7 @@ export default function App() {
           {(shareError || groupError) && <p className="form-error">{shareError ?? groupError}</p>}
         </section>
 
-        <section className="panel advisor-panel">
+        <section className="panel advisor-panel mobile-view-panel mobile-view-planejamento">
           <div className="section-heading">
             <div>
               <span className="section-label">Assistente IA</span>
@@ -1862,7 +1917,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="panel chart-panel">
+        <section className="panel chart-panel mobile-view-panel mobile-view-analises">
           <div className="section-heading">
             <div>
               <span className="section-label">Categorias</span>
@@ -1898,7 +1953,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="panel chart-panel">
+        <section className="panel chart-panel mobile-view-panel mobile-view-analises">
           <div className="section-heading">
             <div>
               <span className="section-label">Evolucao</span>
@@ -1925,7 +1980,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="panel chart-panel">
+        <section className="panel chart-panel mobile-view-panel mobile-view-analises">
           <div className="section-heading">
             <div>
               <span className="section-label">Quem pagou</span>
@@ -1946,7 +2001,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="panel history-panel">
+        <section className="panel history-panel mobile-view-panel mobile-view-lancamentos">
           <div className="section-heading">
             <div>
               <span className="section-label">Historico</span>
@@ -2001,7 +2056,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="panel category-panel">
+        <section className="panel category-panel mobile-view-panel mobile-view-lancamentos">
           <div className="section-heading">
             <div>
               <span className="section-label">Categorias</span>
@@ -2055,7 +2110,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="panel predictions-panel">
+        <section className="panel predictions-panel mobile-view-panel mobile-view-dashboard">
           <div className="section-heading">
             <div>
               <span className="section-label">Inteligencia financeira</span>
@@ -2114,7 +2169,7 @@ export default function App() {
           )}
         </section>
 
-        <section className="panel insights-panel">
+        <section className="panel insights-panel mobile-view-panel mobile-view-dashboard">
           <div className="section-heading">
             <div>
               <span className="section-label">Insights automaticos</span>

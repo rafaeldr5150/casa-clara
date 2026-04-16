@@ -93,6 +93,90 @@ select {
   overflow: hidden;
 }
 
+.mobile-menu-trigger {
+  display: none;
+}
+
+.mobile-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(24, 33, 43, 0.42);
+  z-index: 55;
+}
+
+.mobile-drawer {
+  width: min(84vw, 320px);
+  height: 100%;
+  background: rgba(255, 250, 245, 0.98);
+  border-right: 1px solid rgba(24, 33, 43, 0.1);
+  box-shadow: 0 18px 50px rgba(24, 33, 43, 0.24);
+  padding: 16px 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.mobile-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mobile-drawer-header small {
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: rgba(24, 33, 43, 0.58);
+}
+
+.mobile-drawer-header strong {
+  display: block;
+  margin-top: 4px;
+  letter-spacing: -0.02em;
+}
+
+.mobile-drawer-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  border: 1px solid rgba(24, 33, 43, 0.14);
+  background: white;
+  color: #18212b;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.mobile-drawer-nav {
+  display: grid;
+  gap: 8px;
+}
+
+.mobile-nav-item {
+  text-align: left;
+  border: 1px solid rgba(24, 33, 43, 0.1);
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.mobile-nav-item strong {
+  font-size: 0.95rem;
+}
+
+.mobile-nav-item small {
+  color: rgba(24, 33, 43, 0.62);
+  font-size: 0.78rem;
+}
+
+.mobile-nav-item.active {
+  border-color: rgba(53, 92, 125, 0.38);
+  background: rgba(53, 92, 125, 0.12);
+}
+
 .ambient {
   position: absolute;
   width: 320px;
@@ -1034,6 +1118,23 @@ select:focus {
     padding: 20px 14px 36px;
   }
 
+  .mobile-menu-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-strong);
+    box-shadow: var(--shadow);
+    color: #355c7d;
+    min-height: 40px;
+    padding: 8px 12px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    position: relative;
+    z-index: 2;
+  }
+
   .hero {
     flex-direction: column;
   }
@@ -1063,5 +1164,17 @@ select:focus {
 
   .transaction-actions {
     justify-content: flex-end;
+  }
+
+  .dashboard-grid .mobile-view-panel {
+    display: none;
+  }
+
+  .dashboard-grid.mobile-view-dashboard .mobile-view-dashboard,
+  .dashboard-grid.mobile-view-lancamentos .mobile-view-lancamentos,
+  .dashboard-grid.mobile-view-analises .mobile-view-analises,
+  .dashboard-grid.mobile-view-planejamento .mobile-view-planejamento,
+  .dashboard-grid.mobile-view-grupo .mobile-view-grupo {
+    display: grid;
   }
 }
