@@ -1,6 +1,6 @@
 export type EntryType = 'expense' | 'income';
 
-export type HouseholdUser = 'Rafael' | 'Karina';
+export type HouseholdUser = string;
 
 export interface Category {
   id: string;
@@ -40,4 +40,16 @@ export interface AppState {
   householdId: string;
   categories: Category[];
   transactions: Transaction[];
+}
+
+export interface HouseholdSummaryItem {
+  id: string;
+  name: string;
+  role: 'owner' | 'member';
+}
+
+export interface HouseholdMemberItem {
+  userId: string;
+  name: string;
+  role: 'owner' | 'member';
 }

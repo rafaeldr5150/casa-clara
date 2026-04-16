@@ -55,7 +55,6 @@ No projeto da Vercel, adicione as variáveis:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
-- `VITE_SUPABASE_HOUSEHOLD_ID`
 
 Depois, faça um novo deploy.
 
@@ -69,7 +68,34 @@ O projeto já está configurado como PWA (manifest + service worker), então ele
 ## Importante sobre sincronização
 
 - Sem Supabase: os dados ficam apenas no navegador de cada aparelho.
-- Com Supabase: os dados sincronizam entre seu celular, celular da Karina e computador.
+- Com Supabase: cada pessoa faz login e enxerga apenas os próprios dados.
+
+## Login e isolamento por usuário
+
+- Ao configurar Supabase, o app mostra uma tela de login (entrar/criar conta).
+- Cada usuário autenticado passa a ter um espaço próprio de dados.
+- Categorias padrão são criadas automaticamente no primeiro acesso.
+- O isolamento é garantido por RLS no banco, baseado no usuário autenticado.
+
+## Modo casal/grupo por convite
+
+- Um usuario dono pode gerar codigo de convite dentro do app.
+- Quem receber o codigo entra no mesmo grupo e passa a compartilhar transacoes e categorias.
+- Cada conta pode participar de mais de um grupo e trocar o grupo ativo no topo da tela.
+- Para essa funcionalidade, execute novamente o SQL atualizado de [supabase/schema.sql](supabase/schema.sql).
+
+## Assistente financeiro com LLM real
+
+- O app pode usar um LLM real via Supabase Edge Function para responder no chat do assistente financeiro.
+- A integracao sugerida usa Groq, que possui camada gratuita para testes.
+- O frontend envia apenas o contexto financeiro da casa e o historico recente da conversa para a function.
+
+### Como ativar
+
+1. Crie uma conta em Groq e gere uma API key.
+2. No Supabase CLI ou dashboard, configure o secret `GROQ_API_KEY`.
+3. Faça deploy da function em [supabase/functions/financial-advisor/index.ts](supabase/functions/financial-advisor/index.ts).
+4. O chat do app passa a usar o LLM real automaticamente; se a function falhar, o app cai em fallback local.
 
 ## Modo local
 
@@ -83,10 +109,9 @@ Sem configurar nada, o app funciona com `localStorage` e dados de exemplo. Isso 
 4. Preencha:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
-   - `VITE_SUPABASE_HOUSEHOLD_ID`
 5. Reinicie o frontend.
 
-Quando as variaveis estiverem configuradas, o app passa a ler e gravar transacoes e categorias no Supabase. O canal realtime publica as alteracoes para os dois usuarios conectados.
+Quando as variaveis estiverem configuradas, o app passa a ler e gravar transacoes e categorias no Supabase para o usuario autenticado. O canal realtime atualiza os dados da propria conta em tempo real.
 
 ## Modelo de dados
 

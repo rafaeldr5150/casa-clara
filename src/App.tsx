@@ -3,20 +3,24 @@ import {
   AlertCircle,
   ArrowDownCircle,
   ArrowUpCircle,
+  Brain,
   Car,
   CheckCircle,
   CreditCard,
   HeartPulse,
   Home,
+  MessageCircle,
   PencilLine,
   Plus,
   ReceiptText,
   Save,
+  SendHorizontal,
   ShoppingBasket,
   Ticket,
   TrendingDown,
   TrendingUp,
   Trash2,
+  Users,
   Wallet,
   Wifi,
   WifiOff,
@@ -38,9 +42,39 @@ import {
 } from 'recharts';
 import { formatCurrency, formatMonthLabel, formatShortDate, startOfCurrentMonth, toMonthKey } from './lib/format';
 import { seedState } from './data/seed';
-import { isSupabaseEnabled } from './lib/supabase';
-import { deleteCategory, loadState, removeTransaction, saveTransaction, subscribeToRealtime, upsertCategory } from './lib/storage';
-import type { AppState, Category, EntryType, HouseholdUser, MonthlySummary, Transaction } from './lib/types';
+import {
+  getCurrentUser,
+  invokeFinancialAdvisor,
+  isSupabaseEnabled,
+  signInWithPassword,
+  signOut,
+  signUpWithPassword,
+  supabase,
+} from './lib/supabase';
+import {
+  createHouseholdInvite,
+  deleteCategory,
+  getUserHouseholds,
+  joinHouseholdByInviteCode,
+  listHouseholdMembers,
+  loadState,
+  removeMemberFromHousehold,
+  renameHousehold,
+  removeTransaction,
+  saveTransaction,
+  subscribeToRealtime,
+  upsertCategory,
+} from './lib/storage';
+import type {
+  AppState,
+  Category,
+  EntryType,
+  HouseholdMemberItem,
+  HouseholdSummaryItem,
+  HouseholdUser,
+  MonthlySummary,
+  Transaction,
+} from './lib/types';
 
 const iconMap = {
   Home,
@@ -53,17 +87,17 @@ const iconMap = {
   CreditCard,
 };
 
-const defaultUsers: HouseholdUser[] = ['Rafael', 'Karina'];
-
-const emptyTransactionForm = {
+function buildEmptyTransactionForm(defaultPayer = '') {
+  return {
   description: '',
   amount: '',
   type: 'expense' as EntryType,
   categoryId: seedState.categories[0].id,
-  paidBy: 'Rafael' as HouseholdUser,
+  paidBy: defaultPayer as HouseholdUser,
   transactionDate: new Date().toISOString().slice(0, 10),
   notes: '',
-};
+  };
+}
 
 function buildMonthlySummary(
   transactions: Transaction[],
@@ -268,10 +302,208 @@ function buildInsights(
   return insights;
 }
 
+type AdvisorPriority = 'alta' | 'media' | 'baixa';
+
+interface AdvisorRecommendation {
+  title: string;
+  detail: string;
+  action: string;
+  priority: AdvisorPriority;
+}
+
+interface AdvisorChatMessage {
+  id: string;
+  role: 'assistant' | 'user';
+  text: string;
+}
+
+interface AdvisorSnapshot {
+  monthKey: string;
+  totalIncome: number;
+  totalExpenses: number;
+  balance: number;
+  topCategoryName: string;
+  topCategoryAmount: number;
+  topCategoryShare: number;
+  transactionsCount: number;
+}
+
+function buildFinancialAdvisorRecommendations(
+  transactions: Transaction[],
+  categories: Category[],
+  monthKey: string,
+  focus: string,
+): AdvisorRecommendation[] {
+  const recommendations: AdvisorRecommendation[] = [];
+  const monthExpenses = transactions.filter((t) => t.type === 'expense' && toMonthKey(t.transactionDate) === monthKey);
+  const monthIncome = transactions
+    .filter((t) => t.type === 'income' && toMonthKey(t.transactionDate) === monthKey)
+    .reduce((sum, t) => sum + t.amount, 0);
+  const totalExpenses = monthExpenses.reduce((sum, t) => sum + t.amount, 0);
+  const balance = monthIncome - totalExpenses;
+
+  const totalsByCategory = monthExpenses.reduce<Record<string, number>>((acc, t) => {
+    acc[t.categoryId] = (acc[t.categoryId] ?? 0) + t.amount;
+    return acc;
+  }, {});
+
+  const sortedCategories = Object.entries(totalsByCategory).sort((a, b) => b[1] - a[1]);
+  const topCategory = sortedCategories[0];
+  const topCategoryName = categories.find((c) => c.id === topCategory?.[0])?.name ?? 'Sem categoria';
+  const topCategoryShare = totalExpenses > 0 && topCategory ? (topCategory[1] / totalExpenses) * 100 : 0;
+
+  if (monthIncome <= 0) {
+    recommendations.push({
+      title: 'Registrar todas as entradas',
+      detail: 'Sem receitas registradas no mes, o diagnostico de saude financeira fica distorcido.',
+      action: 'Registre salario, freelas e outras entradas para ter indicadores reais.',
+      priority: 'alta',
+    });
+  }
+
+  if (monthIncome > 0) {
+    const comprometimento = (totalExpenses / monthIncome) * 100;
+    if (comprometimento >= 90) {
+      recommendations.push({
+        title: 'Comprometimento de renda muito alto',
+        detail: `${Math.round(comprometimento)}% da renda do mes ja foi consumida por despesas.`,
+        action: 'Defina teto semanal de gastos variaveis e pause compras nao essenciais por 2 semanas.',
+        priority: 'alta',
+      });
+    } else if (comprometimento >= 75) {
+      recommendations.push({
+        title: 'Zona de atencao no fluxo mensal',
+        detail: `${Math.round(comprometimento)}% da renda foi comprometida.`,
+        action: 'Reduza em 10% os gastos da categoria lider para recuperar folga no caixa.',
+        priority: 'media',
+      });
+    }
+  }
+
+  if (topCategoryShare >= 35) {
+    recommendations.push({
+      title: `Concentracao alta em ${topCategoryName}`,
+      detail: `${Math.round(topCategoryShare)}% das despesas estao nesta categoria.`,
+      action: 'Quebre essa categoria em subitens e renegocie o maior contrato associado.',
+      priority: 'media',
+    });
+  }
+
+  const smallExpenses = monthExpenses.filter((t) => t.amount <= 40);
+  if (smallExpenses.length >= 10) {
+    const smallTotal = smallExpenses.reduce((sum, t) => sum + t.amount, 0);
+    recommendations.push({
+      title: 'Gastos formiga relevantes',
+      detail: `${smallExpenses.length} lancamentos pequenos somam ${formatCurrency(smallTotal)} no mes.`,
+      action: 'Defina um limite semanal para pequenos gastos e revise no domingo.',
+      priority: 'media',
+    });
+  }
+
+  if (balance > 0) {
+    recommendations.push({
+      title: 'Momento favoravel para reserva',
+      detail: `Saldo positivo de ${formatCurrency(balance)} neste mes.`,
+      action: 'Direcione entre 20% e 30% do saldo para reserva de emergencia automaticamente.',
+      priority: 'baixa',
+    });
+  }
+
+  if (focus.trim().length > 0) {
+    recommendations.push({
+      title: 'Plano guiado pelo foco informado',
+      detail: `Foco atual: "${focus.trim()}". O plano foi orientado para essa prioridade.`,
+      action: 'Escolha 1 meta numerica para 30 dias e acompanhe semanalmente no painel.',
+      priority: 'baixa',
+    });
+  }
+
+  if (!recommendations.length) {
+    recommendations.push({
+      title: 'Base financeira equilibrada',
+      detail: 'Os dados atuais indicam boa distribuicao de gastos para o periodo analisado.',
+      action: 'Mantenha revisao semanal e acompanhe variacoes de categoria no proximo mes.',
+      priority: 'baixa',
+    });
+  }
+
+  return recommendations.slice(0, 6);
+}
+
+function buildAdvisorSnapshot(
+  transactions: Transaction[],
+  categories: Category[],
+  monthKey: string,
+): AdvisorSnapshot {
+  const monthTransactions = transactions.filter((t) => toMonthKey(t.transactionDate) === monthKey);
+  const totalIncome = monthTransactions.filter((t) => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+  const expenseItems = monthTransactions.filter((t) => t.type === 'expense');
+  const totalExpenses = expenseItems.reduce((sum, t) => sum + t.amount, 0);
+  const totalsByCategory = expenseItems.reduce<Record<string, number>>((acc, t) => {
+    acc[t.categoryId] = (acc[t.categoryId] ?? 0) + t.amount;
+    return acc;
+  }, {});
+  const [topCategoryId, topCategoryAmount] = Object.entries(totalsByCategory).sort((a, b) => b[1] - a[1])[0] ?? ['', 0];
+  const topCategoryName = categories.find((c) => c.id === topCategoryId)?.name ?? 'Sem categoria';
+  const topCategoryShare = totalExpenses > 0 ? (topCategoryAmount / totalExpenses) * 100 : 0;
+
+  return {
+    monthKey,
+    totalIncome,
+    totalExpenses,
+    balance: totalIncome - totalExpenses,
+    topCategoryName,
+    topCategoryAmount,
+    topCategoryShare,
+    transactionsCount: monthTransactions.length,
+  };
+}
+
+function buildAdvisorReply(
+  question: string,
+  snapshot: AdvisorSnapshot,
+  recommendations: AdvisorRecommendation[],
+): string {
+  const q = question.trim().toLowerCase();
+  const topAction = recommendations[0]?.action ?? 'mantenha revisao semanal e acompanhe as categorias lideres.';
+  const worriedTone = /(desesper|preocup|apert|devend|sem dinheiro|ferrad|caos|atras|problema)/.test(q);
+  const intro = worriedTone ? 'Calma ai, meu. Vamos resolver isso sem drama.' : 'Meu, vamos dizer assim...';
+  const closer = worriedTone
+    ? 'Foca no proximo passo pratico e ja melhora o jogo.'
+    : 'Voce ja ta na frente de muita gente so por olhar isso com calma, velho.';
+
+  if (!q) {
+    return 'Meu, eu sou o Rodrigao do planejamento domestico. Posso te ajudar com metas, economia, fluxo do mes e aquele caos basico da casa, so que no controle.';
+  }
+
+  if (q.includes('resumo') || q.includes('situacao') || q.includes('como estamos')) {
+    return `${intro} resumo de ${snapshot.monthKey}: receitas ${formatCurrency(snapshot.totalIncome)}, despesas ${formatCurrency(snapshot.totalExpenses)} e saldo ${formatCurrency(snapshot.balance)}.\n\nA fase mais pesada do jogo ta em ${snapshot.topCategoryName}, com ${formatCurrency(snapshot.topCategoryAmount)} (${Math.round(snapshot.topCategoryShare)}% dos gastos). ${closer}`;
+  }
+
+  if (q.includes('econom') || q.includes('reduzir') || q.includes('cortar') || q.includes('gasto')) {
+    return `${intro} se a missao e reduzir gasto, eu iria direto em ${snapshot.topCategoryName}, que ta puxando ${Math.round(snapshot.topCategoryShare)}% das despesas do mes.\n\nPlano pratico: limite semanal nessa categoria + revisao antes de pagar.\nAcao recomendada: ${topAction}\n\n${closer}`;
+  }
+
+  if (q.includes('meta') || q.includes('planej') || q.includes('objetivo')) {
+    const suggestedTarget = Math.max(0, snapshot.totalExpenses * 0.1);
+    return `${intro} meta boa e meta que cabe na vida real.\n\nSugestao para 30 dias: reduzir ${formatCurrency(suggestedTarget)} em despesas variaveis, coisa de uns 10% do gasto atual.\n\nMeta simples: "economizar ${formatCurrency(suggestedTarget)} ate o fim do proximo mes". ${closer}`;
+  }
+
+  if (q.includes('categoria') || q.includes('onde') || q.includes('concentr')) {
+    return `${intro} ${snapshot.topCategoryName} e hoje a principal categoria de despesas, com ${formatCurrency(snapshot.topCategoryAmount)}.\n\nSe quiser, eu monto um plano especifico so pra ela: meta semanal, teto e rotina de controle. ${closer}`;
+  }
+
+  if (q.includes('divida') || q.includes('cartao') || q.includes('parcel')) {
+    return `${intro} divida se resolve por ordem e sangue frio, mano.\n\nMinha estrategia: atacar juros mais altos primeiro, congelar novas parcelas por 30 dias e separar um valor fixo semanal pra amortizacao. Se voce me disser o valor da divida, eu te desenho um plano redondo. ${closer}`;
+  }
+
+  return `${intro} analisei seus dados e meu conselho principal agora e: ${topAction}\n\nSe quiser, manda uma dessas: "meta de economia", "resumo do mes" ou "como cortar gastos da categoria ${snapshot.topCategoryName}". ${closer}`;
+}
+
 export default function App() {
   const [appState, setAppState] = useState<AppState | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(startOfCurrentMonth());
-  const [transactionForm, setTransactionForm] = useState(emptyTransactionForm);
+  const [transactionForm, setTransactionForm] = useState(buildEmptyTransactionForm());
   const [categoryName, setCategoryName] = useState('');
   const [categoryColor, setCategoryColor] = useState('#355c7d');
   const [categoryType, setCategoryType] = useState<EntryType>('expense');
@@ -283,24 +515,138 @@ export default function App() {
   const [editCategoryName, setEditCategoryName] = useState('');
   const [editCategoryColor, setEditCategoryColor] = useState('#355c7d');
   const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(!isSupabaseEnabled);
+  const [currentHouseholdId, setCurrentHouseholdId] = useState(isSupabaseEnabled ? '' : seedState.householdId);
+  const [currentUserName, setCurrentUserName] = useState('Voce');
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authName, setAuthName] = useState('');
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState('');
+  const [households, setHouseholds] = useState<HouseholdSummaryItem[]>([]);
+  const [inviteCode, setInviteCode] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [groupNameDraft, setGroupNameDraft] = useState('');
+  const [members, setMembers] = useState<HouseholdMemberItem[]>([]);
+  const [groupBusy, setGroupBusy] = useState(false);
+  const [groupError, setGroupError] = useState<string | null>(null);
+  const [memberPendingRemoval, setMemberPendingRemoval] = useState<HouseholdMemberItem | null>(null);
+  const [advisorFocus, setAdvisorFocus] = useState('');
+  const [advisorRecommendations, setAdvisorRecommendations] = useState<AdvisorRecommendation[]>([]);
+  const [advisorQuestion, setAdvisorQuestion] = useState('');
+  const [advisorThinking, setAdvisorThinking] = useState(false);
+  const [advisorMessages, setAdvisorMessages] = useState<AdvisorChatMessage[]>([
+    {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      text: 'Meu, eu sou o Rodrigao. Vamos dizer assim: se o assunto e organizar a grana da casa, aqui e modo profissional, velho. Me pergunta sobre economia, metas, categorias, divida ou fluxo do mes.',
+    },
+  ]);
+
+  const activeHouseholdStorageKey = currentUserId ? `casa-clara-active-household-${currentUserId}` : '';
 
   useEffect(() => {
+    if (!isSupabaseEnabled || !supabase) {
+      setAuthReady(true);
+      return;
+    }
+
+    let mounted = true;
+
+    const applyUser = (user: Awaited<ReturnType<typeof getCurrentUser>>) => {
+      if (!mounted) return;
+      if (!user) {
+        setCurrentUserId('');
+        setHouseholds([]);
+        setCurrentHouseholdId('');
+        setAppState(null);
+        setLoadError(null);
+        return;
+      }
+
+      const resolvedName =
+        typeof user.user_metadata?.name === 'string' && user.user_metadata.name.trim().length > 0
+          ? user.user_metadata.name
+          : user.email?.split('@')[0] ?? 'Usuario';
+
+      setCurrentUserName(resolvedName);
+      setCurrentUserId(user.id);
+      const savedHousehold = localStorage.getItem(`casa-clara-active-household-${user.id}`) ?? '';
+      setCurrentHouseholdId(savedHousehold || user.id);
+    };
+
+    void getCurrentUser().then((user) => {
+      applyUser(user);
+      if (mounted) {
+        setAuthReady(true);
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      applyUser(session?.user ?? null);
+      setAuthReady(true);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) {
+      return;
+    }
+
+    if (isSupabaseEnabled && !currentHouseholdId) {
+      return;
+    }
+
     let mounted = true;
 
     const initialize = async () => {
-      const state = await loadState();
-      if (!mounted) {
-        return;
+      try {
+        const [state, userHouseholds] = await Promise.all([
+          loadState(currentHouseholdId),
+          getUserHouseholds(),
+        ]);
+        if (!mounted) {
+          return;
+        }
+        setHouseholds(userHouseholds);
+        setAppState(state);
+        setLoadError(null);
+        const householdMembers = await listHouseholdMembers(state.householdId);
+        if (!mounted) {
+          return;
+        }
+        setMembers(householdMembers);
+        if (state.householdId !== currentHouseholdId) {
+          setCurrentHouseholdId(state.householdId);
+          if (activeHouseholdStorageKey) {
+            localStorage.setItem(activeHouseholdStorageKey, state.householdId);
+          }
+        }
+        setTransactionForm((current) => ({
+          ...current,
+          categoryId: state.categories.find((item) => item.kind === current.type)?.id ?? state.categories[0]?.id ?? '',
+          paidBy: current.paidBy || currentUserName,
+        }));
+      } catch (error) {
+        console.error('[initialize]', error);
+        setLoadError('Nao foi possivel carregar seus dados. Verifique as politicas do Supabase e tente novamente.');
       }
-      setAppState(state);
-      setTransactionForm((current) => ({
-        ...current,
-        categoryId: state.categories.find((item) => item.kind === current.type)?.id ?? state.categories[0]?.id ?? '',
-      }));
     };
 
     void initialize();
-    const unsubscribe = subscribeToRealtime(() => {
+    const unsubscribe = subscribeToRealtime(currentHouseholdId, () => {
       setSyncStatus('online');
       void initialize();
     });
@@ -309,10 +655,35 @@ export default function App() {
       mounted = false;
       unsubscribe();
     };
-  }, []);
-
+  }, [activeHouseholdStorageKey, authReady, currentHouseholdId, currentUserName]);
   const categories = appState?.categories ?? [];
   const transactions = appState?.transactions ?? [];
+  const activeHousehold = households.find((item) => item.id === currentHouseholdId) ?? null;
+
+  useEffect(() => {
+    setGroupNameDraft(activeHousehold?.name ?? '');
+  }, [activeHousehold?.name]);
+
+  const availableUsers = useMemo(() => {
+    const unique = new Set<string>();
+    for (const member of members) {
+      if (member.name.trim()) {
+        unique.add(member.name.trim());
+      }
+    }
+    for (const transaction of transactions) {
+      if (transaction.paidBy.trim()) {
+        unique.add(transaction.paidBy.trim());
+      }
+    }
+    if (currentUserName.trim()) {
+      unique.add(currentUserName.trim());
+    }
+    if (unique.size === 0) {
+      unique.add('Voce');
+    }
+    return Array.from(unique);
+  }, [members, transactions, currentUserName]);
 
   useEffect(() => {
     if (!categories.length) {
@@ -375,13 +746,13 @@ export default function App() {
 
   const paidByData = useMemo(
     () =>
-      defaultUsers.map((user) => ({
+      availableUsers.map((user) => ({
         name: user,
         total: monthTransactions
           .filter((item) => item.type === 'expense' && item.paidBy === user)
           .reduce((sum, item) => sum + item.amount, 0),
       })),
-    [monthTransactions],
+    [availableUsers, monthTransactions],
   );
 
   const monthlyOptions = useMemo(() => {
@@ -407,13 +778,231 @@ export default function App() {
   );
 
   const insights = useMemo(
-    () => buildInsights(transactions, categories, selectedMonth, defaultUsers),
+    () => buildInsights(transactions, categories, selectedMonth, availableUsers),
+    [transactions, categories, selectedMonth, availableUsers],
+  );
+
+  const advisorSnapshot = useMemo(
+    () => buildAdvisorSnapshot(transactions, categories, selectedMonth),
     [transactions, categories, selectedMonth],
   );
 
+  useEffect(() => {
+    setAdvisorRecommendations(
+      buildFinancialAdvisorRecommendations(transactions, categories, selectedMonth, advisorFocus),
+    );
+  }, [transactions, categories, selectedMonth]);
+
+  async function handleAuthSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthError(null);
+
+    if (!authEmail.trim() || !authPassword.trim()) {
+      setAuthError('Preencha email e senha.');
+      return;
+    }
+
+    if (authMode === 'signup' && authName.trim().length < 2) {
+      setAuthError('Informe seu nome para criar a conta.');
+      return;
+    }
+
+    setAuthSubmitting(true);
+    try {
+      if (authMode === 'signup') {
+        await signUpWithPassword(authEmail.trim(), authPassword, authName.trim());
+        await signInWithPassword(authEmail.trim(), authPassword);
+      } else {
+        await signInWithPassword(authEmail.trim(), authPassword);
+      }
+      setAuthError(null);
+    } catch (error) {
+      console.error('[handleAuthSubmit]', error);
+      setAuthError('Nao foi possivel autenticar. Verifique seus dados e tente novamente.');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
+  async function handleSignOut() {
+    await signOut();
+    setAppState(null);
+    setHouseholds([]);
+    setCurrentUserId('');
+    setCurrentHouseholdId('');
+    setInviteCode('');
+    setJoinCode('');
+    setShareError(null);
+  }
+
   async function refreshState() {
-    const nextState = await loadState();
+    const nextState = await loadState(currentHouseholdId);
     setAppState(nextState);
+  }
+
+  async function handleGenerateInvite() {
+    if (!currentHouseholdId) return;
+
+    setShareBusy(true);
+    setShareError(null);
+    try {
+      const code = await createHouseholdInvite(currentHouseholdId);
+      setInviteCode(code);
+    } catch (error) {
+      console.error('[handleGenerateInvite]', error);
+      setShareError('Nao foi possivel gerar o codigo de convite.');
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  async function handleJoinByCode(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!joinCode.trim()) {
+      setShareError('Informe um codigo de convite.');
+      return;
+    }
+
+    setShareBusy(true);
+    setShareError(null);
+    try {
+      const joinedHouseholdId = await joinHouseholdByInviteCode(joinCode);
+      if (activeHouseholdStorageKey) {
+        localStorage.setItem(activeHouseholdStorageKey, joinedHouseholdId);
+      }
+      setCurrentHouseholdId(joinedHouseholdId);
+      setJoinCode('');
+      const [userHouseholds, householdMembers] = await Promise.all([
+        getUserHouseholds(),
+        listHouseholdMembers(joinedHouseholdId),
+      ]);
+      setHouseholds(userHouseholds);
+      setMembers(householdMembers);
+    } catch (error) {
+      console.error('[handleJoinByCode]', error);
+      setShareError('Codigo invalido ou expirado.');
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  async function handleRenameGroup(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!currentHouseholdId || !groupNameDraft.trim()) {
+      return;
+    }
+
+    setGroupBusy(true);
+    setGroupError(null);
+    try {
+      await renameHousehold(currentHouseholdId, groupNameDraft.trim());
+      const userHouseholds = await getUserHouseholds();
+      setHouseholds(userHouseholds);
+    } catch (error) {
+      console.error('[handleRenameGroup]', error);
+      setGroupError('Nao foi possivel renomear o grupo.');
+    } finally {
+      setGroupBusy(false);
+    }
+  }
+
+  async function handleRemoveMember(userId: string) {
+    if (!currentHouseholdId) return;
+
+    setGroupBusy(true);
+    setGroupError(null);
+    try {
+      await removeMemberFromHousehold(currentHouseholdId, userId);
+      const householdMembers = await listHouseholdMembers(currentHouseholdId);
+      setMembers(householdMembers);
+      setMemberPendingRemoval(null);
+    } catch (error) {
+      console.error('[handleRemoveMember]', error);
+      setGroupError('Nao foi possivel remover o convidado.');
+    } finally {
+      setGroupBusy(false);
+    }
+  }
+
+  function handleRequestRemoveMember(member: HouseholdMemberItem) {
+    setMemberPendingRemoval(member);
+  }
+
+  function handleGenerateAdvisorPlan() {
+    setAdvisorRecommendations(
+      buildFinancialAdvisorRecommendations(transactions, categories, selectedMonth, advisorFocus),
+    );
+  }
+
+  async function requestAdvisorReply(question: string) {
+    const recommendations = buildFinancialAdvisorRecommendations(transactions, categories, selectedMonth, advisorFocus);
+    const recentTransactions = [...transactions]
+      .filter((item) => toMonthKey(item.transactionDate) === selectedMonth)
+      .sort((left, right) => right.transactionDate.localeCompare(left.transactionDate))
+      .slice(0, 12)
+      .map((item) => ({
+        description: item.description,
+        amount: item.amount,
+        type: item.type,
+        categoryName: categories.find((category) => category.id === item.categoryId)?.name ?? 'Sem categoria',
+        paidBy: item.paidBy,
+        transactionDate: item.transactionDate,
+      }));
+
+    if (!isSupabaseEnabled || !supabase) {
+      return buildAdvisorReply(question, advisorSnapshot, recommendations);
+    }
+
+    try {
+      const result = await invokeFinancialAdvisor({
+        householdName: activeHousehold?.name ?? 'Grupo financeiro',
+        selectedMonth,
+        focus: advisorFocus,
+        snapshot: advisorSnapshot,
+        recommendations,
+        recentTransactions,
+        messages: advisorMessages.slice(-8).map((message) => ({
+          role: message.role,
+          text: message.text,
+        })),
+      });
+      return result.reply;
+    } catch (error) {
+      console.error('[requestAdvisorReply]', error);
+      return buildAdvisorReply(question, advisorSnapshot, recommendations);
+    }
+  }
+
+  async function handleAdvisorChatSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const question = advisorQuestion.trim();
+    if (!question) return;
+
+    const userMessage: AdvisorChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      text: question,
+    };
+
+    setAdvisorMessages((current) => [...current, userMessage]);
+    setAdvisorQuestion('');
+    setAdvisorThinking(true);
+
+    try {
+      const replyText = await requestAdvisorReply(question);
+      const assistantMessage: AdvisorChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        text: replyText,
+      };
+      setAdvisorMessages((current) => [...current, assistantMessage]);
+    } finally {
+      setAdvisorThinking(false);
+    }
+  }
+
+  function handleAdvisorQuickPrompt(prompt: string) {
+    setAdvisorQuestion(prompt);
   }
 
   async function handleTransactionSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -462,7 +1051,7 @@ export default function App() {
       setEditingTransactionId(null);
       setFormError(null);
       setTransactionForm({
-        ...emptyTransactionForm,
+        ...buildEmptyTransactionForm(currentUserName),
         categoryId: categories.find((item) => item.kind === 'expense')?.id ?? '',
         transactionDate: new Date().toISOString().slice(0, 10),
       });
@@ -492,7 +1081,7 @@ export default function App() {
     if (editingTransactionId === id) {
       setEditingTransactionId(null);
       setTransactionForm({
-        ...emptyTransactionForm,
+        ...buildEmptyTransactionForm(currentUserName),
         categoryId: categories.find((item) => item.kind === 'expense')?.id ?? '',
       });
     }
@@ -544,6 +1133,89 @@ export default function App() {
     await refreshState();
   }
 
+  if (!authReady) {
+    return <div className="loading-screen">Validando acesso...</div>;
+  }
+
+  if (isSupabaseEnabled && !currentHouseholdId) {
+    return (
+      <div className="auth-shell">
+        <div className="auth-card">
+          <span className="eyebrow">Acesso seguro</span>
+          <h1>Entre para acessar seus dados</h1>
+          <p>Cada conta enxerga apenas os proprios lancamentos e categorias.</p>
+
+          <form className="auth-form" onSubmit={handleAuthSubmit}>
+            {authMode === 'signup' && (
+              <label>
+                Nome
+                <input value={authName} onChange={(event) => setAuthName(event.target.value)} placeholder="Seu nome" />
+              </label>
+            )}
+
+            <label>
+              Email
+              <input
+                type="email"
+                autoComplete="email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                placeholder="voce@email.com"
+              />
+            </label>
+
+            <label>
+              Senha
+              <input
+                type="password"
+                autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                placeholder="Sua senha"
+              />
+            </label>
+
+            <button className="primary-button" type="submit" disabled={authSubmitting}>
+              {authSubmitting
+                ? 'Entrando...'
+                : authMode === 'signup'
+                ? 'Criar conta e entrar'
+                : 'Entrar'}
+            </button>
+
+            {authError && <p className="form-error">{authError}</p>}
+          </form>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => {
+              setAuthError(null);
+              setAuthMode((current) => (current === 'signin' ? 'signup' : 'signin'));
+            }}
+          >
+            {authMode === 'signin' ? 'Primeiro acesso? Criar conta' : 'Ja tenho conta'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError && !appState) {
+    return (
+      <div className="auth-shell">
+        <div className="auth-card">
+          <span className="eyebrow">Erro de carregamento</span>
+          <h1>Falha ao abrir o painel</h1>
+          <p>{loadError}</p>
+          <button className="primary-button" type="button" onClick={() => window.location.reload()}>
+            Tentar novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!appState) {
     return <div className="loading-screen">Carregando painel financeiro...</div>;
   }
@@ -555,18 +1227,45 @@ export default function App() {
 
       <header className="hero">
         <div>
-          <span className="eyebrow">Financeiro compartilhado para casal</span>
+          <span className="eyebrow">Financeiro colaborativo com convite</span>
           <h1>Casa Clara</h1>
           <p>
-            Registre gastos em segundos, acompanhe o mes com clareza e mantenha o historico financeiro dos dois no
-            mesmo lugar.
+            Registre gastos em segundos, acompanhe o mes com clareza e compartilhe o mesmo painel com quem voce
+            convidar.
           </p>
         </div>
 
         <div className="hero-actions">
           <div className="sync-pill">
             {syncStatus === 'online' ? <Wifi size={16} /> : <WifiOff size={16} />}
-            <span>{syncStatus === 'online' ? 'Supabase conectado' : 'Modo local ativo'}</span>
+            <span>{syncStatus === 'online' ? 'Finanças Conectadas' : 'Modo local ativo'}</span>
+          </div>
+
+          {isSupabaseEnabled && (
+            <button type="button" className="secondary-button logout-button" onClick={() => void handleSignOut()}>
+              Sair da conta
+            </button>
+          )}
+
+          <div className="month-selector">
+            <label htmlFor="household-select">Grupo ativo</label>
+            <select
+              id="household-select"
+              value={currentHouseholdId}
+              onChange={(event) => {
+                const nextHouseholdId = event.target.value;
+                if (activeHouseholdStorageKey) {
+                  localStorage.setItem(activeHouseholdStorageKey, nextHouseholdId);
+                }
+                setCurrentHouseholdId(nextHouseholdId);
+              }}
+            >
+              {households.map((household) => (
+                <option key={household.id} value={household.id}>
+                  {household.name} ({household.role === 'owner' ? 'dono' : 'membro'})
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="month-selector">
@@ -710,7 +1409,7 @@ export default function App() {
                     }))
                   }
                 >
-                  {defaultUsers.map((user) => (
+                  {availableUsers.map((user) => (
                     <option key={user} value={user}>
                       {user}
                     </option>
@@ -747,6 +1446,175 @@ export default function App() {
 
             {formError && <p className="form-error">{formError}</p>}
           </form>
+        </section>
+
+        <section className="panel share-panel">
+          <div className="section-heading">
+            <div>
+              <span className="section-label">Compartilhamento</span>
+              <h2>Convide outra pessoa</h2>
+            </div>
+            <Users size={18} />
+          </div>
+
+          <p className="empty-state">
+            Grupo atual: <strong>{activeHousehold?.name ?? 'Sem grupo'}</strong>
+          </p>
+
+          <form className="join-form" onSubmit={handleRenameGroup}>
+            <label>
+              Nome do grupo
+              <input
+                value={groupNameDraft}
+                onChange={(event) => setGroupNameDraft(event.target.value)}
+                placeholder="Ex.: Casa da Karina e Rafael"
+              />
+            </label>
+            <button className="secondary-button" type="submit" disabled={groupBusy || activeHousehold?.role !== 'owner'}>
+              {groupBusy ? 'Salvando...' : activeHousehold?.role === 'owner' ? 'Renomear grupo' : 'Apenas o dono pode editar'}
+            </button>
+          </form>
+
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={shareBusy || activeHousehold?.role !== 'owner'}
+            onClick={() => void handleGenerateInvite()}
+          >
+            {shareBusy ? 'Gerando...' : activeHousehold?.role === 'owner' ? 'Gerar codigo de convite' : 'Apenas o dono gera convite'}
+          </button>
+
+          {inviteCode && (
+            <div className="invite-code-box">
+              <span>Codigo valido por 7 dias</span>
+              <strong>{inviteCode}</strong>
+            </div>
+          )}
+
+          <form className="join-form" onSubmit={handleJoinByCode}>
+            <label>
+              Entrar com codigo
+              <input
+                value={joinCode}
+                onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                placeholder="Ex.: AB12CD34"
+              />
+            </label>
+            <button className="primary-button" type="submit" disabled={shareBusy}>
+              {shareBusy ? 'Entrando...' : 'Entrar no grupo'}
+            </button>
+          </form>
+
+          <div className="member-list">
+            <span className="member-list-title">Membros do grupo</span>
+            {members.length ? (
+              members.map((member) => (
+                <div key={member.userId} className="member-item">
+                  <div>
+                    <strong>{member.name}</strong>
+                    <small>{member.role === 'owner' ? 'Dono' : 'Convidado'}</small>
+                  </div>
+                  {activeHousehold?.role === 'owner' && member.role === 'member' && (
+                    <button
+                      type="button"
+                      className="chip-action-btn danger"
+                      disabled={groupBusy}
+                      onClick={() => handleRequestRemoveMember(member)}
+                      aria-label="Remover convidado"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="empty-state">Nenhum membro encontrado.</p>
+            )}
+          </div>
+
+          {(shareError || groupError) && <p className="form-error">{shareError ?? groupError}</p>}
+        </section>
+
+        <section className="panel advisor-panel">
+          <div className="section-heading">
+            <div>
+              <span className="section-label">Assistente IA</span>
+              <h2>Planejador financeiro da casa</h2>
+            </div>
+            <Brain size={18} />
+          </div>
+
+          <p className="empty-state">
+            Analise profissional baseada nas movimentacoes do periodo selecionado, com foco em eficiencia e organizacao.
+          </p>
+
+          <div className="join-form">
+            <label>
+              Foco do momento (opcional)
+              <input
+                value={advisorFocus}
+                onChange={(event) => setAdvisorFocus(event.target.value)}
+                placeholder="Ex.: reduzir supermercado, montar reserva, quitar cartao"
+              />
+            </label>
+            <button className="secondary-button" type="button" onClick={handleGenerateAdvisorPlan}>
+              Gerar plano de melhoria
+            </button>
+          </div>
+
+          <div className="advisor-list">
+            {advisorRecommendations.map((item, index) => (
+              <article key={`${item.title}-${index}`} className={`advisor-card priority-${item.priority}`}>
+                <span className="advisor-priority">Prioridade {item.priority}</span>
+                <strong>{item.title}</strong>
+                <p>{item.detail}</p>
+                <small>Acao recomendada: {item.action}</small>
+              </article>
+            ))}
+          </div>
+
+          <div className="advisor-chat">
+            <div className="advisor-chat-header">
+              <MessageCircle size={16} />
+              <span>Converse com o planejador financeiro</span>
+            </div>
+
+            <div className="advisor-quick-prompts">
+              <button type="button" className="quick-prompt" onClick={() => handleAdvisorQuickPrompt('Me de um resumo do mes')}>
+                Resumo do mes
+              </button>
+              <button type="button" className="quick-prompt" onClick={() => handleAdvisorQuickPrompt('Como reduzir gastos rapidamente?')}>
+                Reduzir gastos
+              </button>
+              <button type="button" className="quick-prompt" onClick={() => handleAdvisorQuickPrompt('Defina uma meta para os proximos 30 dias')}>
+                Meta de 30 dias
+              </button>
+            </div>
+
+            <div className="advisor-messages">
+              {advisorMessages.map((message) => (
+                <article key={message.id} className={`advisor-message ${message.role === 'assistant' ? 'assistant' : 'user'}`}>
+                  <p>{message.text}</p>
+                </article>
+              ))}
+              {advisorThinking && (
+                <article className="advisor-message assistant">
+                  <p>Analisando seus dados e montando recomendacao...</p>
+                </article>
+              )}
+            </div>
+
+            <form className="advisor-chat-form" onSubmit={handleAdvisorChatSubmit}>
+              <input
+                value={advisorQuestion}
+                onChange={(event) => setAdvisorQuestion(event.target.value)}
+                placeholder="Pergunte sobre metas, economia, fluxo de caixa, categorias..."
+              />
+              <button type="submit" className="primary-button" disabled={advisorThinking} aria-label="Enviar pergunta ao assistente">
+                <SendHorizontal size={16} />
+              </button>
+            </form>
+          </div>
         </section>
 
         <section className="panel chart-panel">
@@ -1029,6 +1897,35 @@ export default function App() {
           )}
         </section>
       </main>
+
+      {memberPendingRemoval && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Confirmar remocao de convidado">
+          <div className="confirm-modal">
+            <h3>Remover convidado do grupo?</h3>
+            <p>
+              {memberPendingRemoval.name} sera removido deste grupo e deixara de visualizar as movimentacoes compartilhadas.
+            </p>
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setMemberPendingRemoval(null)}
+                disabled={groupBusy}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="primary-button danger-button"
+                onClick={() => void handleRemoveMember(memberPendingRemoval.userId)}
+                disabled={groupBusy}
+              >
+                {groupBusy ? 'Removendo...' : 'Confirmar remocao'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

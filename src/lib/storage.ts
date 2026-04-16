@@ -1,9 +1,89 @@
 import { seedState } from '../data/seed';
-import { isSupabaseEnabled, supabase } from './supabase';
-import type { AppState, Category, Transaction } from './types';
+import { getCurrentUser, isSupabaseEnabled, supabase } from './supabase';
+import type { AppState, Category, HouseholdMemberItem, HouseholdSummaryItem, Transaction } from './types';
 
 const STORAGE_KEY = 'casa-clara-state';
-const householdId = import.meta.env.VITE_SUPABASE_HOUSEHOLD_ID ?? seedState.householdId;
+
+async function ensureRemoteBaseline(userId: string, userName: string) {
+  if (!supabase) return;
+
+  const householdId = userId;
+
+  const { count } = await supabase
+    .from('categories')
+    .select('id', { count: 'exact', head: true })
+    .eq('household_id', householdId);
+
+  await supabase
+    .from('households')
+    .upsert({
+      id: householdId,
+      owner_id: userId,
+      name: `Casa de ${userName}`,
+      currency: 'BRL',
+    });
+
+  await supabase.from('household_members').upsert({
+    household_id: householdId,
+    user_id: userId,
+    display_name: userName,
+    role: 'owner',
+  });
+
+  if ((count ?? 0) > 0) {
+    return;
+  }
+
+  await supabase.from('categories').insert(
+    seedState.categories.map((category) => ({
+      id: crypto.randomUUID(),
+      household_id: householdId,
+      name: category.name,
+      color: category.color,
+      icon: category.icon,
+      kind: category.kind,
+      is_default: true,
+    })),
+  );
+}
+
+function normalizeInviteCode(code: string) {
+  return code.trim().replace(/\s+/g, '').toUpperCase();
+}
+
+function generateInviteCode() {
+  return Math.random().toString(36).slice(2, 10).toUpperCase();
+}
+
+async function getOrCreateUserHouseholds(userId: string, userName: string): Promise<HouseholdSummaryItem[]> {
+  if (!supabase) {
+    return [];
+  }
+
+  await ensureRemoteBaseline(userId, userName);
+
+  const { data, error } = await supabase
+    .from('household_members')
+    .select('household_id, role, households(id, name)')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw new Error('Nao foi possivel carregar os grupos do usuario.');
+  }
+
+  return (data ?? [])
+    .map((item) => {
+      const household = Array.isArray(item.households) ? item.households[0] : item.households;
+      if (!household?.id) return null;
+      return {
+        id: household.id,
+        name: household.name,
+        role: item.role as 'owner' | 'member',
+      };
+    })
+    .filter((item): item is HouseholdSummaryItem => Boolean(item));
+}
 
 function mapCategoryFromRemote(category: {
   id: string;
@@ -32,7 +112,7 @@ function mapTransactionFromRemote(transaction: {
   amount: number;
   type: 'expense' | 'income';
   category_id: string;
-  paid_by: 'Rafael' | 'Karina';
+  paid_by: string;
   transaction_date: string;
   notes: string | null;
   created_at: string;
@@ -72,10 +152,30 @@ function saveLocalState(state: AppState) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-export async function loadState(): Promise<AppState> {
+export async function loadState(activeHouseholdId?: string): Promise<AppState> {
   if (!isSupabaseEnabled || !supabase) {
     return loadLocalState();
   }
+
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error('Usuario nao autenticado.');
+  }
+
+  const userId = user.id;
+  const userName =
+    typeof user.user_metadata?.name === 'string' && user.user_metadata.name.trim().length > 0
+      ? user.user_metadata.name
+      : user.email?.split('@')[0] ?? 'Usuario';
+
+  const households = await getOrCreateUserHouseholds(userId, userName);
+  if (!households.length) {
+    throw new Error('Usuario sem grupo associado.');
+  }
+
+  const householdId = households.some((item) => item.id === activeHouseholdId)
+    ? (activeHouseholdId as string)
+    : households[0].id;
 
   const [categoriesResult, transactionsResult] = await Promise.all([
     supabase.from('categories').select('*').eq('household_id', householdId).order('name'),
@@ -83,7 +183,7 @@ export async function loadState(): Promise<AppState> {
   ]);
 
   if (categoriesResult.error || transactionsResult.error) {
-    return loadLocalState();
+    throw new Error('Nao foi possivel carregar dados do usuario no Supabase.');
   }
 
   return {
@@ -167,8 +267,8 @@ export async function removeTransaction(id: string) {
   await supabase.from('transactions').delete().eq('id', id);
 }
 
-export function subscribeToRealtime(onChange: () => void) {
-  if (!isSupabaseEnabled || !supabase) {
+export function subscribeToRealtime(householdId: string, onChange: () => void) {
+  if (!isSupabaseEnabled || !supabase || !householdId) {
     return () => undefined;
   }
 
@@ -191,4 +291,153 @@ export function subscribeToRealtime(onChange: () => void) {
   return () => {
     void client.removeChannel(channel);
   };
+}
+
+export async function getUserHouseholds(): Promise<HouseholdSummaryItem[]> {
+  if (!isSupabaseEnabled || !supabase) {
+    return [
+      {
+        id: seedState.householdId,
+        name: 'Casa Local',
+        role: 'owner',
+      },
+    ];
+  }
+
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error('Usuario nao autenticado.');
+  }
+
+  const userName =
+    typeof user.user_metadata?.name === 'string' && user.user_metadata.name.trim().length > 0
+      ? user.user_metadata.name
+      : user.email?.split('@')[0] ?? 'Usuario';
+
+  return getOrCreateUserHouseholds(user.id, userName);
+}
+
+export async function createHouseholdInvite(householdId: string) {
+  if (!isSupabaseEnabled || !supabase) {
+    throw new Error('Convites estao disponiveis apenas com Supabase.');
+  }
+
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error('Usuario nao autenticado.');
+  }
+
+  const code = generateInviteCode();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { error } = await supabase.from('household_invites').insert({
+    household_id: householdId,
+    code,
+    created_by: user.id,
+    expires_at: expiresAt,
+  });
+
+  if (error) {
+    throw new Error('Nao foi possivel gerar convite.');
+  }
+
+  return code;
+}
+
+export async function joinHouseholdByInviteCode(code: string) {
+  if (!isSupabaseEnabled || !supabase) {
+    throw new Error('Convites estao disponiveis apenas com Supabase.');
+  }
+
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error('Usuario nao autenticado.');
+  }
+
+  const userName =
+    typeof user.user_metadata?.name === 'string' && user.user_metadata.name.trim().length > 0
+      ? user.user_metadata.name
+      : user.email?.split('@')[0] ?? 'Usuario';
+
+  const normalizedCode = normalizeInviteCode(code);
+  const { data: invite, error: inviteError } = await supabase
+    .from('household_invites')
+    .select('household_id, expires_at')
+    .eq('code', normalizedCode)
+    .maybeSingle();
+
+  if (inviteError || !invite) {
+    throw new Error('Codigo de convite invalido.');
+  }
+
+  if (new Date(invite.expires_at).getTime() < Date.now()) {
+    throw new Error('Codigo de convite expirado.');
+  }
+
+  const { error } = await supabase.from('household_members').upsert({
+    household_id: invite.household_id,
+    user_id: user.id,
+    display_name: userName,
+    role: 'member',
+  });
+
+  if (error) {
+    throw new Error('Nao foi possivel entrar no grupo.');
+  }
+
+  return invite.household_id;
+}
+
+export async function listHouseholdMembers(householdId: string): Promise<HouseholdMemberItem[]> {
+  if (!isSupabaseEnabled || !supabase) {
+    return [{ userId: 'local-user', name: 'Voce', role: 'owner' }];
+  }
+
+  const { data, error } = await supabase
+    .from('household_members')
+    .select('user_id, role, display_name')
+    .eq('household_id', householdId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw new Error('Nao foi possivel listar membros do grupo.');
+  }
+
+  return (data ?? []).map((item) => ({
+    userId: item.user_id,
+    name: item.display_name || 'Usuario',
+    role: item.role as 'owner' | 'member',
+  }));
+}
+
+export async function renameHousehold(householdId: string, name: string) {
+  if (!isSupabaseEnabled || !supabase) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from('households')
+    .update({ name: name.trim() })
+    .eq('id', householdId);
+
+  if (error) {
+    throw new Error('Nao foi possivel atualizar o nome do grupo.');
+  }
+}
+
+export async function removeMemberFromHousehold(householdId: string, userId: string) {
+  if (!isSupabaseEnabled || !supabase) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from('household_members')
+    .delete()
+    .eq('household_id', householdId)
+    .eq('user_id', userId)
+    .eq('role', 'member');
+
+  if (error) {
+    throw new Error('Nao foi possivel remover o convidado.');
+  }
 }

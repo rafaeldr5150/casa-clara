@@ -52,6 +52,40 @@ select {
   font-size: 1.05rem;
 }
 
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: min(100%, 460px);
+  padding: 28px;
+  border-radius: 28px;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 16px;
+}
+
+.auth-card h1 {
+  margin: 2px 0;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+
+.auth-card p {
+  margin: 0;
+  color: rgba(24, 33, 43, 0.68);
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
 .app-shell {
   position: relative;
   min-height: 100vh;
@@ -187,6 +221,18 @@ select {
 
 .form-panel {
   grid-column: span 4;
+}
+
+.share-panel {
+  grid-column: span 4;
+  display: grid;
+  gap: 12px;
+}
+
+.advisor-panel {
+  grid-column: span 8;
+  display: grid;
+  gap: 12px;
 }
 
 .chart-panel,
@@ -353,6 +399,10 @@ select:focus {
   width: 100%;
   background: rgba(53, 92, 125, 0.12);
   color: #355c7d;
+}
+
+.logout-button {
+  justify-self: stretch;
 }
 
 .form-error {
@@ -564,6 +614,252 @@ select:focus {
   cursor: pointer;
 }
 
+.invite-code-box {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px dashed rgba(53, 92, 125, 0.35);
+  background: rgba(53, 92, 125, 0.06);
+  display: grid;
+  gap: 4px;
+}
+
+.invite-code-box span {
+  font-size: 0.8rem;
+  color: rgba(24, 33, 43, 0.6);
+}
+
+.invite-code-box strong {
+  letter-spacing: 0.12em;
+  font-size: 1.05rem;
+}
+
+.join-form {
+  display: grid;
+  gap: 12px;
+}
+
+.member-list {
+  display: grid;
+  gap: 8px;
+}
+
+.member-list-title {
+  font-size: 0.83rem;
+  color: rgba(24, 33, 43, 0.6);
+  font-weight: 700;
+}
+
+.member-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(24, 33, 43, 0.08);
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.member-item strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.member-item small {
+  color: rgba(24, 33, 43, 0.55);
+  font-size: 0.76rem;
+}
+
+.advisor-list {
+  display: grid;
+  gap: 10px;
+}
+
+.advisor-chat {
+  margin-top: 4px;
+  border: 1px solid rgba(24, 33, 43, 0.08);
+  border-radius: 18px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.78);
+  display: grid;
+  gap: 10px;
+}
+
+.advisor-chat-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: rgba(24, 33, 43, 0.75);
+}
+
+.advisor-quick-prompts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.quick-prompt {
+  border: 1px solid rgba(53, 92, 125, 0.22);
+  background: rgba(53, 92, 125, 0.08);
+  color: #1f4360;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.advisor-messages {
+  max-height: 280px;
+  overflow-y: auto;
+  display: grid;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.advisor-message {
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(24, 33, 43, 0.08);
+}
+
+.advisor-message p {
+  margin: 0;
+  white-space: pre-line;
+  line-height: 1.4;
+}
+
+.advisor-message.assistant {
+  justify-self: start;
+  background: rgba(53, 92, 125, 0.08);
+}
+
+.advisor-message.user {
+  justify-self: end;
+  background: rgba(47, 133, 90, 0.1);
+}
+
+.advisor-chat-form {
+  display: grid;
+  grid-template-columns: 1fr 52px;
+  gap: 8px;
+}
+
+.advisor-chat-form .primary-button {
+  min-height: 48px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.advisor-card {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(24, 33, 43, 0.08);
+  background: rgba(255, 255, 255, 0.78);
+  display: grid;
+  gap: 6px;
+}
+
+.advisor-priority {
+  display: inline-block;
+  width: fit-content;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.advisor-card strong {
+  font-size: 1rem;
+}
+
+.advisor-card p {
+  margin: 0;
+  color: rgba(24, 33, 43, 0.75);
+}
+
+.advisor-card small {
+  color: rgba(24, 33, 43, 0.62);
+}
+
+.priority-alta {
+  border-color: rgba(192, 86, 33, 0.25);
+  background: rgba(192, 86, 33, 0.06);
+}
+
+.priority-alta .advisor-priority {
+  background: rgba(192, 86, 33, 0.14);
+  color: #8a3412;
+}
+
+.priority-media {
+  border-color: rgba(244, 162, 97, 0.3);
+  background: rgba(244, 162, 97, 0.08);
+}
+
+.priority-media .advisor-priority {
+  background: rgba(244, 162, 97, 0.2);
+  color: #9a3412;
+}
+
+.priority-baixa {
+  border-color: rgba(47, 133, 90, 0.25);
+  background: rgba(47, 133, 90, 0.06);
+}
+
+.priority-baixa .advisor-priority {
+  background: rgba(47, 133, 90, 0.15);
+  color: #166534;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(24, 33, 43, 0.4);
+  display: grid;
+  place-items: center;
+  z-index: 40;
+  padding: 16px;
+}
+
+.confirm-modal {
+  width: min(100%, 430px);
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid rgba(24, 33, 43, 0.12);
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgba(24, 33, 43, 0.2);
+  padding: 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.confirm-modal h3 {
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.confirm-modal p {
+  margin: 0;
+  color: rgba(24, 33, 43, 0.72);
+}
+
+.confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.danger-button {
+  background: #9f1239;
+}
+
 .predictions-panel { grid-column: span 4; }
 .insights-panel { grid-column: span 8; }
 
@@ -650,6 +946,8 @@ select:focus {
   .chart-panel,
   .history-panel,
   .category-panel,
+  .share-panel,
+  .advisor-panel,
   .predictions-panel,
   .insights-panel {
     grid-column: span 12;
