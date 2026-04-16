@@ -1229,6 +1229,21 @@ export default function App() {
     { id: 'grupo', label: 'Grupo e convites', description: 'Membros, codigo e compartilhamento' },
   ];
 
+  function handleDashboardShortcut(targetView: MobileView) {
+    setMobileView(targetView);
+    if (window.matchMedia('(max-width: 780px)').matches) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
+  function handleDashboardShortcutKeyDown(event: React.KeyboardEvent<HTMLElement>, targetView: MobileView) {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+    event.preventDefault();
+    handleDashboardShortcut(targetView);
+  }
+
   async function handleTransactionSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError(null);
@@ -1585,25 +1600,53 @@ export default function App() {
           </div>
 
           <div className="summary-grid">
-            <article className="summary-card tone-expense">
+            <article
+              className="summary-card tone-expense dashboard-shortcut"
+              role="button"
+              tabIndex={0}
+              onClick={() => handleDashboardShortcut('lancamentos')}
+              onKeyDown={(event) => handleDashboardShortcutKeyDown(event, 'lancamentos')}
+              title="Abrir lancamentos"
+            >
               <span>Gastos</span>
               <strong>{formatCurrency(monthlySummary.totalExpenses)}</strong>
               <small>{monthlySummary.previousMonthDelta >= 0 ? 'Acima' : 'Abaixo'} do mes anterior</small>
             </article>
 
-            <article className="summary-card tone-income">
+            <article
+              className="summary-card tone-income dashboard-shortcut"
+              role="button"
+              tabIndex={0}
+              onClick={() => handleDashboardShortcut('lancamentos')}
+              onKeyDown={(event) => handleDashboardShortcutKeyDown(event, 'lancamentos')}
+              title="Abrir lancamentos"
+            >
               <span>Entradas</span>
               <strong>{formatCurrency(monthlySummary.totalIncome)}</strong>
               <small>Receita registrada no mes</small>
             </article>
 
-            <article className="summary-card tone-balance">
+            <article
+              className="summary-card tone-balance dashboard-shortcut"
+              role="button"
+              tabIndex={0}
+              onClick={() => handleDashboardShortcut('lancamentos')}
+              onKeyDown={(event) => handleDashboardShortcutKeyDown(event, 'lancamentos')}
+              title="Abrir lancamentos"
+            >
               <span>Saldo</span>
               <strong>{formatCurrency(monthlySummary.balance)}</strong>
               <small>Receitas menos despesas</small>
             </article>
 
-            <article className="summary-card tone-focus">
+            <article
+              className="summary-card tone-focus dashboard-shortcut"
+              role="button"
+              tabIndex={0}
+              onClick={() => handleDashboardShortcut('analises')}
+              onKeyDown={(event) => handleDashboardShortcutKeyDown(event, 'analises')}
+              title="Abrir analises"
+            >
               <span>Categoria em destaque</span>
               <strong>{monthlySummary.topCategoryName}</strong>
               <small>{formatCurrency(monthlySummary.topCategoryAmount)}</small>
@@ -1611,15 +1654,36 @@ export default function App() {
           </div>
 
           <div className="insight-strip">
-            <div>
+            <div
+              className="dashboard-shortcut"
+              role="button"
+              tabIndex={0}
+              onClick={() => handleDashboardShortcut('analises')}
+              onKeyDown={(event) => handleDashboardShortcutKeyDown(event, 'analises')}
+              title="Abrir analises"
+            >
               <span>Media diaria</span>
               <strong>{formatCurrency(monthlySummary.averageDailyExpense)}</strong>
             </div>
-            <div>
+            <div
+              className="dashboard-shortcut"
+              role="button"
+              tabIndex={0}
+              onClick={() => handleDashboardShortcut('analises')}
+              onKeyDown={(event) => handleDashboardShortcutKeyDown(event, 'analises')}
+              title="Abrir analises"
+            >
               <span>Comparacao</span>
               <strong>{formatCurrency(Math.abs(monthlySummary.previousMonthDelta))}</strong>
             </div>
-            <div>
+            <div
+              className="dashboard-shortcut"
+              role="button"
+              tabIndex={0}
+              onClick={() => handleDashboardShortcut('planejamento')}
+              onKeyDown={(event) => handleDashboardShortcutKeyDown(event, 'planejamento')}
+              title="Abrir planejador IA"
+            >
               <span>Leitura automatica</span>
               <strong>
                 {monthlySummary.topCategoryName === 'Sem destaque'

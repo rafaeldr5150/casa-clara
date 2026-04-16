@@ -412,6 +412,19 @@ select {
   color: white;
 }
 
+.dashboard-shortcut {
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
+}
+
+.dashboard-shortcut:hover,
+.dashboard-shortcut:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(24, 33, 43, 0.14);
+  filter: saturate(1.02);
+  outline: none;
+}
+
 .summary-card span,
 .summary-card small {
   opacity: 0.88;
@@ -1168,6 +1181,10 @@ select:focus {
 
   .dashboard-grid .mobile-view-panel {
     display: none;
+  }
+
+  .dashboard-shortcut:active {
+    transform: translateY(0);
   }
 
   .dashboard-grid.mobile-view-dashboard .mobile-view-dashboard,
